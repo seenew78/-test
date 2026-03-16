@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "Listing": {
+      "title": "Real Estate Listing",
+      "description": "A property listing with details like price, location, and type.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["아파트", "상가", "토지", "주택", "오피스텔"] },
+        "dealType": { "type": "string", "enum": ["매매", "전세", "월세"] },
+        "price": { "type": "string" },
+        "location": { "type": "string" },
+        "area": { "type": "string" },
+        "description": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "type", "dealType", "price", "location"]
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "User role and basic information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/listings/{listingId}": {
+      "schema": "Listing",
+      "description": "Collection of property listings"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    }
+  }
+}

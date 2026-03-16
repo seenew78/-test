@@ -25,11 +25,40 @@ import {
   CheckCircle2,
   Instagram,
   Facebook,
-  MessageCircle
+  MessageCircle,
+  LogIn
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SITE_CONFIG, INITIAL_LISTINGS } from './constants';
 import { Listing, Page } from './types';
+import { auth, db } from './firebase';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut,
+  User
+} from 'firebase/auth';
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  query, 
+  orderBy, 
+  serverTimestamp,
+  getDoc,
+  setDoc
+} from 'firebase/firestore';
+
+// --- Helpers ---
+const formatDate = (timestamp: any) => {
+  if (!timestamp) return '-';
+  if (timestamp.toDate) return timestamp.toDate().toLocaleDateString();
+  return new Date(timestamp).toLocaleDateString();
+};
 
 // --- Components ---
 
@@ -546,7 +575,7 @@ const DetailPage = ({ listing, setPage }: { listing: Listing | null, setPage: (p
                 </div>
                 <div>
                   <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">등록일</div>
-                  <div className="text-xl font-black text-slate-900">{new Date(listing.createdAt).toLocaleDateString()}</div>
+                  <div className="text-xl font-black text-slate-900">{formatDate(listing.createdAt)}</div>
                 </div>
               </div>
 
@@ -764,7 +793,7 @@ const ContactPage = () => {
   );
 };
 
-const AdminDashboard = ({ listings, setListings, onLogout }: { listings: Listing[], setListings: (l: Listing[]) => void, onLogout: () => void }) => {
+const AdminDashboard = ({ listings, onLogout }: { listings: Listing[], onLogout: () => void }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Listing>>({
@@ -783,44 +812,35 @@ const AdminDashboard = ({ listings, setListings, onLogout }: { listings: Listing
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const url = editingId ? `/api/listings/${editingId}` : '/api/listings';
-      const method = editingId ? 'PUT' : 'POST';
-      
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-
-      if (response.ok) {
-        const savedListing = await response.json();
-        if (editingId) {
-          setListings(listings.map(l => l.id === editingId ? savedListing : l));
-        } else {
-          setListings([savedListing, ...listings]);
-        }
-        setIsAdding(false);
-        setEditingId(null);
-        setFormData({ title: '', type: '매매', category: '아파트', price: '', location: '', description: '', features: [], area: '', floor: '', imageUrl: 'https://picsum.photos/seed/new/800/600' });
+      if (editingId) {
+        const docRef = doc(db, 'listings', editingId);
+        await updateDoc(docRef, {
+          ...formData,
+          updatedAt: serverTimestamp()
+        });
       } else {
-        alert('저장에 실패했습니다. 권한을 확인하세요.');
+        await addDoc(collection(db, 'listings'), {
+          ...formData,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
       }
+      setIsAdding(false);
+      setEditingId(null);
+      setFormData({ title: '', type: '매매', category: '아파트', price: '', location: '', description: '', features: [], area: '', floor: '', imageUrl: 'https://picsum.photos/seed/new/800/600' });
     } catch (error) {
       console.error('Save error:', error);
+      alert('저장에 실패했습니다. 권한을 확인하세요.');
     }
   };
 
   const handleDelete = async (id: string) => {
     if (window.confirm('정말 삭제하시겠습니까?')) {
       try {
-        const response = await fetch(`/api/listings/${id}`, { method: 'DELETE' });
-        if (response.ok) {
-          setListings(listings.filter(l => l.id !== id));
-        } else {
-          alert('삭제에 실패했습니다.');
-        }
+        await deleteDoc(doc(db, 'listings', id));
       } catch (error) {
         console.error('Delete error:', error);
+        alert('삭제에 실패했습니다.');
       }
     }
   };
@@ -1003,7 +1023,7 @@ const AdminDashboard = ({ listings, setListings, onLogout }: { listings: Listing
                         </div>
                       </td>
                       <td className="px-6 py-4 font-bold text-slate-900">{l.price}</td>
-                      <td className="px-6 py-4 text-sm text-slate-500">{new Date(l.createdAt).toLocaleDateString()}</td>
+                      <td className="px-6 py-4 text-sm text-slate-500">{formatDate(l.createdAt)}</td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
                           <button 
@@ -1033,30 +1053,35 @@ const AdminDashboard = ({ listings, setListings, onLogout }: { listings: Listing
 };
 
 const LoginPage = ({ onLogin }: { onLogin: () => void }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGoogleLogin = async () => {
     setError('');
+    setLoading(true);
     try {
-      console.log('Attempting login...');
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
       
-      const data = await response.json();
-      if (response.ok && data.success) {
+      // 관리자 권한 확인 (SeeNew78@gmail.com)
+      if (user.email === 'SeeNew78@gmail.com') {
+        // Firestore에 사용자 정보 저장/업데이트
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          email: user.email,
+          role: 'admin'
+        }, { merge: true });
         onLogin();
       } else {
-        setError(data.message || '로그인에 실패했습니다.');
+        setError('관리자 권한이 없습니다. 등록된 이메일로 로그인해 주세요.');
+        await signOut(auth);
       }
-    } catch (err) {
-      console.error('Login fetch error:', err);
-      setError('서버 연결 오류: 서버가 응답하지 않거나 네트워크 문제가 발생했습니다.');
+    } catch (err: any) {
+      console.error('Login error:', err);
+      setError('로그인 중 오류가 발생했습니다: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1072,50 +1097,47 @@ const LoginPage = ({ onLogin }: { onLogin: () => void }) => {
             <Building2 size={32} />
           </div>
           <h2 className="text-2xl font-black text-slate-900">관리자 로그인</h2>
-          <p className="text-slate-500 mt-2">비밀의 문에 오신 것을 환영합니다.</p>
+          <p className="text-slate-500 mt-2">제일부동산 관리 시스템</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">아이디</label>
-            <input 
-              required
-              type="text" 
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:border-primary"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">비밀번호</label>
-            <input 
-              required
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:border-primary"
-            />
-          </div>
-          {error && <p className="text-red-500 text-sm font-bold">{error}</p>}
+        <div className="space-y-6">
+          <p className="text-center text-sm text-slate-500 mb-4">
+            보안을 위해 구글 계정으로 로그인해 주세요. <br />
+            (관리자 이메일: SeeNew78@gmail.com)
+          </p>
+          
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm font-bold">
+              {error}
+            </div>
+          )}
+
           <button 
-            type="submit"
-            className="w-full py-5 bg-primary text-white font-bold text-lg rounded-2xl hover:bg-primary-dark transition-all shadow-xl shadow-primary/20"
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            className="w-full py-5 bg-white border border-slate-200 text-slate-700 font-bold text-lg rounded-2xl hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-3"
           >
-            입장하기
+            {loading ? (
+              <div className="w-6 h-6 border-2 border-slate-300 border-t-primary rounded-full animate-spin"></div>
+            ) : (
+              <>
+                <Globe size={24} className="text-primary" />
+                구글로 로그인하기
+              </>
+            )}
           </button>
-        </form>
+        </div>
       </motion.div>
     </div>
   );
 };
-
-// --- Main App ---
 
 export default function App() {
   const [page, setPage] = useState<Page>('home');
   const [listings, setListings] = useState<Listing[]>([]);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
 
   // 숨겨진 경로 감지
   useEffect(() => {
@@ -1124,37 +1146,54 @@ export default function App() {
     }
   }, []);
 
-  // 데이터 로드 (백엔드 API 사용)
+  // Firebase Auth 상태 감시
   useEffect(() => {
-    const fetchListings = async () => {
-      try {
-        const response = await fetch('/api/listings');
-        const data = await response.json();
-        setListings(data);
-      } catch (err) {
-        console.error('Fetch error:', err);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser && currentUser.email === 'SeeNew78@gmail.com') {
+        setUser(currentUser);
+        setIsLoggedIn(true);
+      } else {
+        setUser(null);
+        setIsLoggedIn(false);
       }
-    };
-    fetchListings();
+    });
+    return () => unsubscribe();
   }, []);
 
-  // 로그인 상태 체크 (간단하게 세션 스토리지 사용하거나 쿠키 존재 여부로 판단 가능)
+  // Firestore 데이터 실시간 감시 및 초기 시딩
   useEffect(() => {
-    const loggedIn = sessionStorage.getItem('isLoggedIn') === 'true';
-    if (loggedIn) setIsLoggedIn(true);
+    const q = query(collection(db, 'listings'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      if (snapshot.empty) {
+        // 데이터가 없으면 초기 데이터 시딩
+        console.log('Seeding initial data...');
+        for (const item of INITIAL_LISTINGS) {
+          await addDoc(collection(db, 'listings'), {
+            ...item,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        }
+      } else {
+        const newListings = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Listing[];
+        setListings(newListings);
+      }
+    }, (error) => {
+      console.error('Firestore snapshot error:', error);
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleLogin = () => {
-    setIsLoggedIn(true);
-    sessionStorage.setItem('isLoggedIn', 'true');
     setPage('admin');
-    window.history.pushState({}, '', '/'); // URL 청소
+    window.history.pushState({}, '', '/');
   };
 
   const handleLogout = async () => {
-    await fetch('/api/logout', { method: 'POST' });
-    setIsLoggedIn(false);
-    sessionStorage.removeItem('isLoggedIn');
+    await signOut(auth);
     setPage('home');
   };
 
@@ -1172,7 +1211,7 @@ export default function App() {
         return <LoginPage onLogin={handleLogin} />;
       case 'admin':
         return isLoggedIn ? (
-          <AdminDashboard listings={listings} setListings={setListings} onLogout={handleLogout} />
+          <AdminDashboard listings={listings} onLogout={handleLogout} />
         ) : (
           <HomePage setPage={setPage} listings={listings} setSelectedListing={setSelectedListing} />
         );

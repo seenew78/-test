@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: listings
+    // Fields:
+    //   - title: string (required)
+    //   - type: string (required)
+    //   - dealType: string (required)
+    //   - price: string (required)
+    //   - location: string (required)
+    //   - area: string
+    //   - description: string
+    //   - features: list
+    //   - images: list
+    //   - createdAt: timestamp
+    //   - updatedAt: timestamp
+    //
+    // Collection: users
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - role: string (required)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "SeeNew78@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidListing(data) {
+      return data.keys().hasAll(['title', 'type', 'dealType', 'price', 'location']) &&
+             data.title is string && data.title.size() < 200 &&
+             data.type in ['아파트', '상가', '토지', '주택', '오피스텔'] &&
+             data.dealType in ['매매', '전세', '월세'] &&
+             data.price is string && data.price.size() < 100 &&
+             data.location is string && data.location.size() < 200;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid == request.auth.uid &&
+             data.role in ['admin', 'user'];
+    }
+
+    // Listings Rules
+    match /listings/{listingId} {
+      allow read: if true; // Publicly readable
+      allow create: if isAdmin() && isValidListing(request.resource.data);
+      allow update: if isAdmin() && isValidListing(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // User Rules
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data) && request.resource.data.role == 'user';
+      allow update: if isAdmin();
+    }
+  }
+}

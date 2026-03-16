@@ -15,7 +15,8 @@ export interface Listing {
   imageUrl: string;
   area: string; // 면적 (m2)
   floor?: string; // 층수
-  createdAt: number;
+  createdAt: any;
+  updatedAt?: any;
 }
 
 export interface SiteConfig {
