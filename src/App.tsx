@@ -79,7 +79,15 @@ const Header = ({ currentPage, setPage, isLoggedIn }: { currentPage: Page, setPa
             ))}
           </nav>
 
-          <div className="hidden md:block">
+          <div className="hidden md:flex items-center space-x-4">
+            {!isLoggedIn && (
+              <button 
+                onClick={() => setPage('login')}
+                className="text-xs font-bold text-slate-400 hover:text-primary transition-colors"
+              >
+                관리자 로그인
+              </button>
+            )}
             <a 
               href={`tel:${SITE_CONFIG.phone}`}
               className="inline-flex items-center px-5 py-2.5 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-all shadow-md shadow-primary/20"
@@ -127,6 +135,17 @@ const Header = ({ currentPage, setPage, isLoggedIn }: { currentPage: Page, setPa
                 <Phone size={20} className="mr-2" />
                 {SITE_CONFIG.phone}
               </a>
+              {!isLoggedIn && (
+                <button 
+                  onClick={() => {
+                    setPage('login');
+                    setIsMenuOpen(false);
+                  }}
+                  className="block w-full text-left text-sm font-bold text-slate-400 pt-2"
+                >
+                  관리자 로그인
+                </button>
+              )}
             </div>
           </motion.div>
         )}
@@ -192,8 +211,14 @@ const Footer = () => (
         </div>
       </div>
       
-      <div className="pt-8 border-t border-slate-800 text-center text-xs text-slate-500">
-        <p>© 2024 {SITE_CONFIG.name}. All rights reserved. Designed for Excellence.</p>
+      <div className="pt-8 border-t border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
+        <p className="text-xs text-slate-500">© 2024 {SITE_CONFIG.name}. All rights reserved. Designed for Excellence.</p>
+        <button 
+          onClick={() => window.location.href = '/jeil-boss-door'}
+          className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
+        >
+          관리자 로그인
+        </button>
       </div>
     </div>
   </footer>
