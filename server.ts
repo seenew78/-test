@@ -11,8 +11,8 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'default_secret';
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'jeil1234';
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'seenew';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'seenew';
 
 app.use(express.json());
 app.use(cookieParser());
@@ -45,38 +45,51 @@ const authenticateToken = (req: any, res: any, next: any) => {
 };
 
 // --- API Routes ---
+const apiRouter = express.Router();
 
-// 1. 로그인 (회원가입은 아예 없음)
-app.post('/api/login', (req, res) => {
+// 1. 로그인
+apiRouter.post('/login', (req, res) => {
+  console.log('Login attempt:', req.body.username);
   const { username, password } = req.body;
 
-  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
-    res.cookie('admin_token', token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      maxAge: 24 * 60 * 60 * 1000 // 24시간
-    });
-    return res.json({ success: true, message: '로그인 성공' });
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: '아이디와 비밀번호를 입력해주세요.' });
   }
 
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    try {
+      const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
+      res.cookie('admin_token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        maxAge: 24 * 60 * 60 * 1000 // 24시간
+      });
+      console.log('Login successful for:', username);
+      return res.json({ success: true, message: '로그인 성공' });
+    } catch (err) {
+      console.error('JWT signing error:', err);
+      return res.status(500).json({ success: false, message: '서버 내부 오류가 발생했습니다.' });
+    }
+  }
+
+  console.log('Login failed for:', username);
   res.status(401).json({ success: false, message: '아이디 또는 비밀번호가 틀렸습니다.' });
 });
 
 // 2. 로그아웃
-app.post('/api/logout', (req, res) => {
+apiRouter.post('/logout', (req, res) => {
   res.clearCookie('admin_token');
   res.json({ success: true });
 });
 
 // 3. 매물 목록 조회 (공개)
-app.get('/api/listings', (req, res) => {
+apiRouter.get('/listings', (req, res) => {
   res.json(getListings());
 });
 
 // 4. 매물 등록 (관리자 전용)
-app.post('/api/listings', authenticateToken, (req, res) => {
+apiRouter.post('/listings', authenticateToken, (req, res) => {
   const listings = getListings();
   const newListing = {
     ...req.body,
@@ -89,7 +102,7 @@ app.post('/api/listings', authenticateToken, (req, res) => {
 });
 
 // 5. 매물 수정 (관리자 전용)
-app.put('/api/listings/:id', authenticateToken, (req, res) => {
+apiRouter.put('/listings/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
   let listings = getListings();
   const index = listings.findIndex((l: any) => l.id === id);
@@ -103,7 +116,7 @@ app.put('/api/listings/:id', authenticateToken, (req, res) => {
 });
 
 // 6. 매물 삭제 (관리자 전용)
-app.delete('/api/listings/:id', authenticateToken, (req, res) => {
+apiRouter.delete('/listings/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
   let listings = getListings();
   const filtered = listings.filter((l: any) => l.id !== id);
@@ -115,25 +128,38 @@ app.delete('/api/listings/:id', authenticateToken, (req, res) => {
   res.status(404).json({ message: '매물을 찾을 수 없습니다.' });
 });
 
+app.use('/api', apiRouter);
+
 // --- Vite Middleware ---
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
+  console.log('Starting server...');
+  try {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Running in development mode with Vite middleware');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      console.log('Running in production mode');
+      const distPath = path.join(process.cwd(), 'dist');
+      if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+        app.get('*', (req, res) => {
+          res.sendFile(path.join(distPath, 'index.html'));
+        });
+      } else {
+        console.warn('Dist folder not found, falling back to basic static serving');
+      }
+    }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    });
+  } catch (err) {
+    console.error('Failed to start server:', err);
+  }
 }
 
 startServer();

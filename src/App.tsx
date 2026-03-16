@@ -1039,20 +1039,24 @@ const LoginPage = ({ onLogin }: { onLogin: () => void }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     try {
+      console.log('Attempting login...');
       const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
+      
       const data = await response.json();
-      if (data.success) {
+      if (response.ok && data.success) {
         onLogin();
       } else {
-        setError(data.message);
+        setError(data.message || '로그인에 실패했습니다.');
       }
     } catch (err) {
-      setError('서버 연결 오류');
+      console.error('Login fetch error:', err);
+      setError('서버 연결 오류: 서버가 응답하지 않거나 네트워크 문제가 발생했습니다.');
     }
   };
 
