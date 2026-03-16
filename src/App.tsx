@@ -33,15 +33,19 @@ import { Listing, Page } from './types';
 
 // --- Components ---
 
-const Header = ({ currentPage, setPage }: { currentPage: Page, setPage: (p: Page) => void }) => {
+const Header = ({ currentPage, setPage, isLoggedIn }: { currentPage: Page, setPage: (p: Page) => void, isLoggedIn: boolean }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const navItems: { label: string; value: Page }[] = [
     { label: '홈', value: 'home' },
     { label: '매물보기', value: 'listings' },
     { label: '문의하기', value: 'contact' },
-    { label: '관리자', value: 'admin' },
   ];
+
+  // 로그인된 경우에만 관리자 메뉴 추가
+  if (isLoggedIn) {
+    navItems.push({ label: '관리자', value: 'admin' });
+  }
 
   return (
     <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100">
@@ -735,7 +739,7 @@ const ContactPage = () => {
   );
 };
 
-const AdminDashboard = ({ listings, setListings }: { listings: Listing[], setListings: (l: Listing[]) => void }) => {
+const AdminDashboard = ({ listings, setListings, onLogout }: { listings: Listing[], setListings: (l: Listing[]) => void, onLogout: () => void }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Listing>>({
@@ -751,26 +755,48 @@ const AdminDashboard = ({ listings, setListings }: { listings: Listing[], setLis
     imageUrl: 'https://picsum.photos/seed/new/800/600'
   });
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingId) {
-      setListings(listings.map(l => l.id === editingId ? { ...l, ...formData } as Listing : l));
-    } else {
-      const newListing: Listing = {
-        ...formData,
-        id: Math.random().toString(36).substr(2, 9),
-        createdAt: Date.now(),
-      } as Listing;
-      setListings([newListing, ...listings]);
+    try {
+      const url = editingId ? `/api/listings/${editingId}` : '/api/listings';
+      const method = editingId ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+
+      if (response.ok) {
+        const savedListing = await response.json();
+        if (editingId) {
+          setListings(listings.map(l => l.id === editingId ? savedListing : l));
+        } else {
+          setListings([savedListing, ...listings]);
+        }
+        setIsAdding(false);
+        setEditingId(null);
+        setFormData({ title: '', type: '매매', category: '아파트', price: '', location: '', description: '', features: [], area: '', floor: '', imageUrl: 'https://picsum.photos/seed/new/800/600' });
+      } else {
+        alert('저장에 실패했습니다. 권한을 확인하세요.');
+      }
+    } catch (error) {
+      console.error('Save error:', error);
     }
-    setIsAdding(false);
-    setEditingId(null);
-    setFormData({ title: '', type: '매매', category: '아파트', price: '', location: '', description: '', features: [], area: '', floor: '', imageUrl: 'https://picsum.photos/seed/new/800/600' });
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('정말 삭제하시겠습니까?')) {
-      setListings(listings.filter(l => l.id !== id));
+      try {
+        const response = await fetch(`/api/listings/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+          setListings(listings.filter(l => l.id !== id));
+        } else {
+          alert('삭제에 실패했습니다.');
+        }
+      } catch (error) {
+        console.error('Delete error:', error);
+      }
     }
   };
 
@@ -788,17 +814,25 @@ const AdminDashboard = ({ listings, setListings }: { listings: Listing[], setLis
             <h2 className="text-3xl font-black text-slate-900 mb-2">관리자 대시보드</h2>
             <p className="text-slate-500">매물을 등록하고 관리할 수 있습니다.</p>
           </div>
-          {!isAdding && (
+          <div className="flex gap-4">
+            {!isAdding && (
+              <button 
+                onClick={() => setIsAdding(true)}
+                className="flex items-center px-6 py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark transition-all shadow-lg shadow-primary/20"
+              >
+                <Plus size={20} className="mr-2" />
+                새 매물 등록
+              </button>
+            )}
             <button 
-              onClick={() => setIsAdding(true)}
-              className="flex items-center px-6 py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark transition-all shadow-lg shadow-primary/20"
+              onClick={onLogout}
+              className="px-6 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition-all"
             >
-              <Plus size={20} className="mr-2" />
-              새 매물 등록
+              로그아웃
             </button>
-          )}
+          </div>
         </div>
-
+        {/* ... (기본 테이블 및 폼 UI는 유지) ... */}
         {isAdding ? (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -973,34 +1007,127 @@ const AdminDashboard = ({ listings, setListings }: { listings: Listing[], setLis
   );
 };
 
+const LoginPage = ({ onLogin }: { onLogin: () => void }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await response.json();
+      if (data.success) {
+        onLogin();
+      } else {
+        setError(data.message);
+      }
+    } catch (err) {
+      setError('서버 연결 오류');
+    }
+  };
+
+  return (
+    <div className="min-h-[80vh] flex items-center justify-center bg-slate-50 px-4">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full bg-white rounded-3xl p-10 shadow-xl border border-slate-100"
+      >
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-primary/20">
+            <Building2 size={32} />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900">관리자 로그인</h2>
+          <p className="text-slate-500 mt-2">비밀의 문에 오신 것을 환영합니다.</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">아이디</label>
+            <input 
+              required
+              type="text" 
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">비밀번호</label>
+            <input 
+              required
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:border-primary"
+            />
+          </div>
+          {error && <p className="text-red-500 text-sm font-bold">{error}</p>}
+          <button 
+            type="submit"
+            className="w-full py-5 bg-primary text-white font-bold text-lg rounded-2xl hover:bg-primary-dark transition-all shadow-xl shadow-primary/20"
+          >
+            입장하기
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
 // --- Main App ---
 
 export default function App() {
   const [page, setPage] = useState<Page>('home');
   const [listings, setListings] = useState<Listing[]>([]);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // Load data from localStorage or initial constants
+  // 숨겨진 경로 감지
   useEffect(() => {
-    const saved = localStorage.getItem('jeil_listings');
-    if (saved) {
-      setListings(JSON.parse(saved));
-    } else {
-      setListings(INITIAL_LISTINGS);
+    if (window.location.pathname === '/jeil-boss-door') {
+      setPage('login');
     }
   }, []);
 
-  // Save data to localStorage whenever listings change
+  // 데이터 로드 (백엔드 API 사용)
   useEffect(() => {
-    if (listings.length > 0) {
-      localStorage.setItem('jeil_listings', JSON.stringify(listings));
-    }
-  }, [listings]);
+    const fetchListings = async () => {
+      try {
+        const response = await fetch('/api/listings');
+        const data = await response.json();
+        setListings(data);
+      } catch (err) {
+        console.error('Fetch error:', err);
+      }
+    };
+    fetchListings();
+  }, []);
 
-  // Scroll to top on page change
+  // 로그인 상태 체크 (간단하게 세션 스토리지 사용하거나 쿠키 존재 여부로 판단 가능)
   useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [page]);
+    const loggedIn = sessionStorage.getItem('isLoggedIn') === 'true';
+    if (loggedIn) setIsLoggedIn(true);
+  }, []);
+
+  const handleLogin = () => {
+    setIsLoggedIn(true);
+    sessionStorage.setItem('isLoggedIn', 'true');
+    setPage('admin');
+    window.history.pushState({}, '', '/'); // URL 청소
+  };
+
+  const handleLogout = async () => {
+    await fetch('/api/logout', { method: 'POST' });
+    setIsLoggedIn(false);
+    sessionStorage.removeItem('isLoggedIn');
+    setPage('home');
+  };
 
   const renderPage = () => {
     switch (page) {
@@ -1012,8 +1139,14 @@ export default function App() {
         return <DetailPage listing={selectedListing} setPage={setPage} />;
       case 'contact':
         return <ContactPage />;
+      case 'login':
+        return <LoginPage onLogin={handleLogin} />;
       case 'admin':
-        return <AdminDashboard listings={listings} setListings={setListings} />;
+        return isLoggedIn ? (
+          <AdminDashboard listings={listings} setListings={setListings} onLogout={handleLogout} />
+        ) : (
+          <HomePage setPage={setPage} listings={listings} setSelectedListing={setSelectedListing} />
+        );
       default:
         return <HomePage setPage={setPage} listings={listings} setSelectedListing={setSelectedListing} />;
     }
@@ -1021,7 +1154,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header currentPage={page} setPage={setPage} />
+      <Header currentPage={page} setPage={setPage} isLoggedIn={isLoggedIn} />
       <main className="flex-grow">
         <AnimatePresence mode="wait">
           <motion.div

@@ -29,4 +29,4 @@ export interface SiteConfig {
   japaneseSupport: boolean;
 }
 
-export type Page = 'home' | 'listings' | 'detail' | 'contact' | 'admin';
+export type Page = 'home' | 'listings' | 'detail' | 'contact' | 'admin' | 'login';
