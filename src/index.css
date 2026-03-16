@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #FF1493;
+  --color-primary-dark: #C71585;
+  --color-primary-light: #FF69B4;
+  --font-sans: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-white text-slate-900 font-sans;
+  }
+}
+
+.deep-pink-gradient {
+  background: linear-gradient(135deg, #FF1493 0%, #FF69B4 100%);
+}
+
+.glass-card {
+  @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-lg;
+}
